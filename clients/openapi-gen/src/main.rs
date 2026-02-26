@@ -28,12 +28,16 @@ struct Components {
     schemas: BTreeMap<String, Value>,
 }
 
-#[derive(Serialize)]
+#[derive(Default, Serialize)]
 struct PathItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     get: Option<Operation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     post: Option<Operation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    put: Option<Operation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delete: Option<Operation>,
 }
 
 #[derive(Serialize)]
@@ -42,9 +46,26 @@ struct Operation {
     operation_id: String,
     summary: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    parameters: Option<Vec<Parameter>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "requestBody")]
     request_body: Option<RequestBody>,
     responses: BTreeMap<String, Response>,
+}
+
+#[derive(Clone, Serialize)]
+struct Parameter {
+    name: String,
+    #[serde(rename = "in")]
+    location: String,
+    required: bool,
+    schema: ParameterSchema,
+}
+
+#[derive(Clone, Serialize)]
+struct ParameterSchema {
+    #[serde(rename = "type")]
+    schema_type: String,
 }
 
 #[derive(Serialize)]
@@ -55,7 +76,7 @@ struct RequestBody {
 
 #[derive(Serialize)]
 struct MediaType {
-    schema: SchemaRef,
+    schema: Value,
 }
 
 #[derive(Serialize)]
@@ -63,13 +84,6 @@ struct Response {
     description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     content: Option<BTreeMap<String, MediaType>>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SchemaRef {
-    #[serde(rename = "$ref")]
-    schema_ref: String,
 }
 
 // ============================================================================
@@ -143,10 +157,12 @@ fn collect_schema(
     Ok(title)
 }
 
-fn schema_ref(name: &str) -> SchemaRef {
-    SchemaRef {
-        schema_ref: format!("#/components/schemas/{name}"),
-    }
+// ============================================================================
+// Helper functions
+// ============================================================================
+
+fn schema_ref(name: &str) -> Value {
+    serde_json::json!({ "$ref": format!("#/components/schemas/{name}") })
 }
 
 fn json_body(name: &str) -> RequestBody {
@@ -164,6 +180,7 @@ fn json_body(name: &str) -> RequestBody {
 }
 
 fn json_response(name: &str, desc: &str) -> BTreeMap<String, Response> {
+    let mut responses = BTreeMap::new();
     let mut content = BTreeMap::new();
     content.insert(
         "application/json".to_string(),
@@ -171,7 +188,6 @@ fn json_response(name: &str, desc: &str) -> BTreeMap<String, Response> {
             schema: schema_ref(name),
         },
     );
-    let mut responses = BTreeMap::new();
     responses.insert(
         "200".to_string(),
         Response {
@@ -182,27 +198,68 @@ fn json_response(name: &str, desc: &str) -> BTreeMap<String, Response> {
     responses
 }
 
+fn no_content_response(desc: &str) -> BTreeMap<String, Response> {
+    let mut responses = BTreeMap::new();
+    responses.insert(
+        "204".to_string(),
+        Response {
+            description: desc.to_string(),
+            content: None,
+        },
+    );
+    responses
+}
+
+fn path_param(name: &str) -> Parameter {
+    Parameter {
+        name: name.to_string(),
+        location: "path".to_string(),
+        required: true,
+        schema: ParameterSchema {
+            schema_type: "string".to_string(),
+        },
+    }
+}
+
+fn operation(
+    op_id: &str,
+    summary: &str,
+    params: Option<Vec<Parameter>>,
+    request_body: Option<RequestBody>,
+    responses: BTreeMap<String, Response>,
+) -> Operation {
+    Operation {
+        operation_id: op_id.to_string(),
+        summary: summary.to_string(),
+        parameters: params,
+        request_body,
+        responses,
+    }
+}
+
 fn post_endpoint(op_id: &str, summary: &str, req_name: &str, resp_name: &str) -> PathItem {
     PathItem {
-        get: None,
-        post: Some(Operation {
-            operation_id: op_id.to_string(),
-            summary: summary.to_string(),
-            request_body: Some(json_body(req_name)),
-            responses: json_response(resp_name, summary),
-        }),
+        post: Some(operation(
+            op_id,
+            summary,
+            None,
+            Some(json_body(req_name)),
+            json_response(resp_name, summary),
+        )),
+        ..PathItem::default()
     }
 }
 
 fn get_endpoint(op_id: &str, summary: &str, resp_name: &str) -> PathItem {
     PathItem {
-        get: Some(Operation {
-            operation_id: op_id.to_string(),
-            summary: summary.to_string(),
-            request_body: None,
-            responses: json_response(resp_name, summary),
-        }),
-        post: None,
+        get: Some(operation(
+            op_id,
+            summary,
+            None,
+            None,
+            json_response(resp_name, summary),
+        )),
+        ..PathItem::default()
     }
 }
 
@@ -284,6 +341,236 @@ fn main() -> anyhow::Result<()> {
     paths.insert(
         "/v1/responses".to_string(),
         post_endpoint("createResponse", "Create response", &req_name, &resp_name),
+    );
+    // GET + DELETE /v1/responses/{response_id}
+    let response_id_param = vec![path_param("response_id")];
+    paths.insert(
+        "/v1/responses/{response_id}".to_string(),
+        PathItem {
+            get: Some(operation(
+                "getResponse",
+                "Get a response by ID",
+                Some(response_id_param.clone()),
+                None,
+                json_response(&resp_name, "Get a response by ID"),
+            )),
+            delete: Some(operation(
+                "deleteResponse",
+                "Delete a response",
+                Some(response_id_param.clone()),
+                None,
+                no_content_response("Response deleted"),
+            )),
+            ..PathItem::default()
+        },
+    );
+    // POST /v1/responses/{response_id}/cancel
+    paths.insert(
+        "/v1/responses/{response_id}/cancel".to_string(),
+        PathItem {
+            post: Some(operation(
+                "cancelResponse",
+                "Cancel an in-progress response",
+                Some(response_id_param.clone()),
+                None,
+                json_response(&resp_name, "Cancel an in-progress response"),
+            )),
+            ..PathItem::default()
+        },
+    );
+    // GET /v1/responses/{response_id}/input_items — returns generic JSON list
+    let mut input_items_content = BTreeMap::new();
+    input_items_content.insert(
+        "application/json".to_string(),
+        MediaType {
+            schema: serde_json::json!({
+                "type": "object",
+                "description": "Paginated list envelope with {object, data, first_id, last_id, has_more}"
+            }),
+        },
+    );
+    let mut input_items_responses = BTreeMap::new();
+    input_items_responses.insert(
+        "200".to_string(),
+        Response {
+            description: "List input items for a response".to_string(),
+            content: Some(input_items_content),
+        },
+    );
+    paths.insert(
+        "/v1/responses/{response_id}/input_items".to_string(),
+        PathItem {
+            get: Some(operation(
+                "listResponseInputItems",
+                "List input items for a response",
+                Some(response_id_param),
+                None,
+                input_items_responses,
+            )),
+            ..PathItem::default()
+        },
+    );
+
+    // ---- Classify ----
+    use openai_protocol::classify::*;
+    let req_name = collect_schema(&schema_for!(ClassifyRequest), &mut schemas)?;
+    let resp_name = collect_schema(&schema_for!(ClassifyResponse), &mut schemas)?;
+    collect_schema(&schema_for!(ClassifyData), &mut schemas)?;
+    paths.insert(
+        "/v1/classify".to_string(),
+        post_endpoint("classify", "Classify text", &req_name, &resp_name),
+    );
+
+    // ---- Parser ----
+    use openai_protocol::parser::*;
+    let req_name = collect_schema(&schema_for!(ParseFunctionCallRequest), &mut schemas)?;
+    let resp_name = collect_schema(&schema_for!(ParseFunctionCallResponse), &mut schemas)?;
+    paths.insert(
+        "/parse/function_call".to_string(),
+        post_endpoint(
+            "parseFunctionCall",
+            "Parse function calls from model output",
+            &req_name,
+            &resp_name,
+        ),
+    );
+    let req_name = collect_schema(&schema_for!(SeparateReasoningRequest), &mut schemas)?;
+    let resp_name = collect_schema(&schema_for!(SeparateReasoningResponse), &mut schemas)?;
+    paths.insert(
+        "/parse/reasoning".to_string(),
+        post_endpoint(
+            "separateReasoning",
+            "Separate reasoning from model output",
+            &req_name,
+            &resp_name,
+        ),
+    );
+
+    // ---- Workers ----
+    // Note: worker mutation endpoints return 202 Accepted with ad-hoc JSON
+    // (not WorkerApiResponse), and list returns a different stats shape than
+    // WorkerListResponse. We use inline schemas matching the actual server responses.
+    use openai_protocol::worker::*;
+    let worker_spec_name = collect_schema(&schema_for!(WorkerSpec), &mut schemas)?;
+    let worker_info_name = collect_schema(&schema_for!(WorkerInfo), &mut schemas)?;
+    let worker_update_name = collect_schema(&schema_for!(WorkerUpdateRequest), &mut schemas)?;
+
+    // Inline schema for 202 Accepted mutation responses
+    let worker_accepted_schema = serde_json::json!({
+        "type": "object",
+        "description": "202 Accepted response with {status, worker_id, message/url/location}",
+        "properties": {
+            "status": {"type": "string"},
+            "worker_id": {"type": "string"},
+            "message": {"type": "string"},
+            "url": {"type": "string"},
+            "location": {"type": "string"}
+        }
+    });
+    let worker_accepted_response = |desc: &str| -> BTreeMap<String, Response> {
+        let mut responses = BTreeMap::new();
+        let mut content = BTreeMap::new();
+        content.insert(
+            "application/json".to_string(),
+            MediaType {
+                schema: worker_accepted_schema.clone(),
+            },
+        );
+        responses.insert(
+            "202".to_string(),
+            Response {
+                description: desc.to_string(),
+                content: Some(content),
+            },
+        );
+        responses
+    };
+
+    // Inline schema for worker list response
+    let worker_list_schema = serde_json::json!({
+        "type": "object",
+        "description": "Worker list with stats",
+        "properties": {
+            "workers": {
+                "type": "array",
+                "items": { "$ref": format!("#/components/schemas/{worker_info_name}") }
+            },
+            "total": {"type": "integer"},
+            "stats": {
+                "type": "object",
+                "properties": {
+                    "prefill_count": {"type": "integer"},
+                    "decode_count": {"type": "integer"},
+                    "regular_count": {"type": "integer"}
+                }
+            }
+        }
+    });
+    let mut worker_list_content = BTreeMap::new();
+    worker_list_content.insert(
+        "application/json".to_string(),
+        MediaType {
+            schema: worker_list_schema,
+        },
+    );
+    let mut worker_list_responses = BTreeMap::new();
+    worker_list_responses.insert(
+        "200".to_string(),
+        Response {
+            description: "List all workers".to_string(),
+            content: Some(worker_list_content),
+        },
+    );
+
+    // POST + GET /workers
+    paths.insert(
+        "/workers".to_string(),
+        PathItem {
+            get: Some(operation(
+                "listWorkers",
+                "List all workers",
+                None,
+                None,
+                worker_list_responses,
+            )),
+            post: Some(operation(
+                "createWorker",
+                "Register a new worker",
+                None,
+                Some(json_body(&worker_spec_name)),
+                worker_accepted_response("Worker creation accepted"),
+            )),
+            ..PathItem::default()
+        },
+    );
+    // GET + PUT + DELETE /workers/{worker_id}
+    let worker_id_param = vec![path_param("worker_id")];
+    paths.insert(
+        "/workers/{worker_id}".to_string(),
+        PathItem {
+            get: Some(operation(
+                "getWorker",
+                "Get worker by ID",
+                Some(worker_id_param.clone()),
+                None,
+                json_response(&worker_info_name, "Get worker by ID"),
+            )),
+            put: Some(operation(
+                "updateWorker",
+                "Update a worker",
+                Some(worker_id_param.clone()),
+                Some(json_body(&worker_update_name)),
+                worker_accepted_response("Worker update accepted"),
+            )),
+            delete: Some(operation(
+                "deleteWorker",
+                "Remove a worker",
+                Some(worker_id_param),
+                None,
+                worker_accepted_response("Worker deletion accepted"),
+            )),
+            ..PathItem::default()
+        },
     );
 
     // ---- Generate (SGLang native) ----
