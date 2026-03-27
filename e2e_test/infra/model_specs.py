@@ -96,6 +96,14 @@ MODEL_SPECS: dict[str, dict] = {
         "worker_args": ["--trust-remote-code"],
         "vllm_args": ["--trust-remote-code"],
     },
+    # GLM-4.6 - nightly benchmarks
+    "zai-org/GLM-4.6": {
+        "model": _resolve_model_path("zai-org/GLM-4.6"),
+        "tp": 8,
+        "features": ["chat", "streaming", "function_calling", "reasoning"],
+        "worker_args": ["--trust-remote-code"],
+        "vllm_args": ["--trust-remote-code"],
+    },
     # Vision-language model for multimodal benchmarks (MMMU)
     "Qwen/Qwen3-VL-8B-Instruct": {
         "model": _resolve_model_path("Qwen/Qwen3-VL-8B-Instruct"),
