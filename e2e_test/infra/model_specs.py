@@ -91,6 +91,12 @@ MODEL_SPECS: dict[str, dict] = {
         "worker_args": ["--trust-remote-code"],
         "vllm_args": ["--trust-remote-code"],
     },
+    # GLM-4.6 - nightly benchmarks
+    "zai-org/GLM-4.6": {
+        "model": _resolve_model_path("zai-org/GLM-4.6"),
+        "tp": 8,
+        "features": ["chat", "streaming", "function_calling", "reasoning"],
+    },
     # Llama-4-Maverick (17B with 128 experts, FP8) - Nightly benchmarks
     "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": {
         "model": _resolve_model_path("meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8"),
