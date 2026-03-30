@@ -4,10 +4,11 @@ Runs models on k8s H100 or H200 runners using genai-bench default scenarios
 and concurrency levels. No performance thresholds — results are uploaded
 as artifacts for tracking over time.
 
-Each model has Single (1 worker) and Multi (N workers) classes, both
-parametrized with http and grpc backends. The workflow matrix crosses
-model × variant (single/multi × sglang/vllm); both protocols run for
-all runtimes.
+Each model always has a Single (1 worker) class, and models with
+`multi_workers > 1` also get a Multi (N workers) class. Both variants
+are parametrized with http and grpc backends. The workflow matrix
+crosses the generated variants with sglang and vllm runtimes, and both
+protocols run for all runtimes.
 
 genai-bench defaults (omitted flags):
   - Concurrency: [1, 2, 4, 8, 16, 32, 64, 128, 256]
