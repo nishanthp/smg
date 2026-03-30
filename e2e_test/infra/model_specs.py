@@ -99,7 +99,7 @@ MODEL_SPECS: dict[str, dict] = {
     # GLM-4.6 - nightly benchmarks
     "zai-org/GLM-4.6": {
         "model": _resolve_model_path("zai-org/GLM-4.6"),
-        "tp": 8,
+        "tp": 4,
         "features": ["chat", "streaming", "function_calling", "reasoning"],
         "worker_args": ["--trust-remote-code"],
         "vllm_args": ["--trust-remote-code"],

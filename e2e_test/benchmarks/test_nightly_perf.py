@@ -4,11 +4,10 @@ Runs models on k8s H100 or H200 runners using genai-bench default scenarios
 and concurrency levels. No performance thresholds — results are uploaded
 as artifacts for tracking over time.
 
-Each model always has a Single (1 worker) class, and models with
-`multi_workers > 1` also get a Multi (N workers) class. Both variants
-are parametrized with http and grpc backends. The workflow matrix
-crosses the generated variants with sglang and vllm runtimes, and both
-protocols run for all runtimes.
+Each model has Single (1 worker) and Multi (N workers) classes, both
+parametrized with http and grpc backends. The workflow matrix crosses
+model × variant (single/multi × sglang/vllm); both protocols run for
+all runtimes.
 
 genai-bench defaults (omitted flags):
   - Concurrency: [1, 2, 4, 8, 16, 32, 64, 128, 256]
@@ -144,11 +143,7 @@ def _make_test_class(model_id, worker_count, backends, extra_kwargs):
 
 
 for _model_id, _name, _multi_workers, _backends, _extra in _NIGHTLY_MODELS:
-    variants = [("Single", 1)]
-    if _multi_workers > 1:
-        variants.append(("Multi", _multi_workers))
-
-    for _suffix, _count in variants:
+    for _suffix, _count in [("Single", 1), ("Multi", _multi_workers)]:
         _cls_name = f"TestNightly{_name}{_suffix}"
         _cls = _make_test_class(_model_id, _count, _backends, _extra)
         _cls.__name__ = _cls_name
@@ -156,4 +151,4 @@ for _model_id, _name, _multi_workers, _backends, _extra in _NIGHTLY_MODELS:
         globals()[_cls_name] = _cls
 
 # Clean up loop variables from module namespace
-del _model_id, _name, _multi_workers, _backends, _extra, _suffix, _count, _cls_name, _cls, variants
+del _model_id, _name, _multi_workers, _backends, _extra, _suffix, _count, _cls_name, _cls
